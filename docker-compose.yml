@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: teste-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: teste
+      POSTGRES_USER: teste
+      POSTGRES_PASSWORD: teste_local
+    ports:
+      - "5434:5432"
+    volumes:
+      - teste_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U teste -d teste"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  teste_postgres_data:

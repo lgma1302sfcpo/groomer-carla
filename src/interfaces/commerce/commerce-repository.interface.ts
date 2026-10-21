@@ -1,0 +1,106 @@
+import type {
+  CreateCustomerDTO,
+  CustomerFiltersDTO,
+  UpdateCustomerDTO
+} from "@/dtos/commerce/customer.dto";
+import type { CreateSaleDTO } from "@/dtos/commerce/sale.dto";
+
+export type CustomerRecord = {
+  id: string;
+  branchId?: string | null;
+  branchName?: string | null;
+  name: string;
+  document?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  whatsapp?: string | null;
+  birthDate?: Date | null;
+  address?: string | null;
+  street?: string | null;
+  addressNumber?: string | null;
+  complement?: string | null;
+  district?: string | null;
+  city?: string | null;
+  cityCode?: string | null;
+  state?: string | null;
+  zipCode?: string | null;
+  stateRegistration?: string | null;
+  notes?: string | null;
+  tags: string[];
+  status: string;
+  lastPurchaseAt?: Date | null;
+  purchaseCount: number;
+  totalSpent: number;
+  creditLimit: number;
+  pets: Array<{
+    id: string;
+    name: string;
+    species: "DOG" | "CAT";
+    sex: "MALE" | "FEMALE";
+    breed?: string | null;
+    birthDate?: Date | null;
+    notes?: string | null;
+  }>;
+};
+
+export type CustomerSummaryRecord = {
+  totalCustomers: number;
+  neverPurchased: number;
+  inactive30: number;
+  inactive60: number;
+  inactive90: number;
+};
+
+export type SaleRecord = {
+  id: string;
+  code: string;
+  branchName: string;
+  customerName?: string | null;
+  paymentMethod: string;
+  status: string;
+  soldAt: Date;
+  subtotal: number;
+  discount: number;
+  surcharge: number;
+  total: number;
+  itemsCount: number;
+  items: Array<{
+    productId?: string | null;
+    description: string;
+    quantity: number;
+    unitPrice: number;
+    discount: number;
+    costPrice: number;
+    total: number;
+    category?: string | null;
+    species?: string | null;
+    brand?: string | null;
+    supplier?: string | null;
+  }>;
+};
+
+export type SaleListOptions = {
+  limit?: number | null;
+  status?: "DRAFT" | "COMPLETED" | "CANCELLED";
+};
+
+export interface CommerceRepository {
+  customerDocumentExists(tenantId: string, branchId: string, document: string, excludeCustomerId?: string): Promise<boolean>;
+  customerBelongsToBranch(tenantId: string, branchId: string, customerId: string): Promise<boolean>;
+  findCustomerById(tenantId: string, branchId: string | null, customerId: string): Promise<CustomerRecord | null>;
+  createCustomer(tenantId: string, branchId: string, data: CreateCustomerDTO): Promise<CustomerRecord>;
+  updateCustomer(tenantId: string, branchId: string, customerId: string, data: UpdateCustomerDTO): Promise<CustomerRecord | null>;
+  deleteCustomer(tenantId: string, branchId: string, customerId: string): Promise<boolean>;
+  listCustomers(tenantId: string, branchId: string | null, filters: CustomerFiltersDTO): Promise<CustomerRecord[]>;
+  getCustomerSummary(tenantId: string, branchId: string | null): Promise<CustomerSummaryRecord>;
+  createSale(data: {
+    tenantId: string;
+    branchId: string;
+    userId: string;
+    code: string;
+    sale: CreateSaleDTO;
+    subtotal: number;
+    total: number;
+  }): Promise<{ id: string; code: string; total: number; customerId?: string | null }>;
+  listSales(tenantId: string, branchId: string | null, options?: SaleListOptions): Promise<SaleRecord[]>;
+}

@@ -1,0 +1,246 @@
+"use client";
+
+import {
+  BarChart3,
+  CalendarDays,
+  Boxes,
+  ClipboardList,
+  LogOut,
+  Package,
+  ReceiptText,
+  Landmark,
+  Menu,
+  Settings,
+  ShieldCheck,
+  Users,
+  WalletCards,
+  Banknote,
+  WifiOff,
+  X
+} from "lucide-react";
+import { signOut, useSession } from "next-auth/react";
+import type { Route } from "next";
+import Link from "next/link";
+import { usePathname, useSearchParams } from "next/navigation";
+import React, { useState, type MouseEvent, type ReactNode } from "react";
+
+import { Button } from "@/components/ui/button";
+import { BrandLogo } from "@/components/brand-logo";
+import { Select } from "@/components/ui/select";
+import { AUTH_PERMISSIONS, hasPermission, type PermissionKey } from "@/lib/permissions";
+import { cn } from "@/lib/utils";
+
+type ShellUser = {
+  name?: string | null;
+  email?: string | null;
+  currentTenantName: string;
+  currentBranchId?: string | null;
+  currentBranchName?: string | null;
+  canAccessAllBranches: boolean;
+  roleName: string;
+  permissions: string[];
+};
+
+type ErpShellProps = {
+  user: ShellUser;
+  branches: Array<{ id: string; name: string; isMain: boolean }>;
+  children: ReactNode;
+};
+
+type EnabledNavItem = {
+  href: Route;
+  label: string;
+  icon: typeof BarChart3;
+  permission: PermissionKey | PermissionKey[];
+  enabled: true;
+  requiresUpgrade?: boolean;
+};
+
+const navItems: EnabledNavItem[] = [
+  { href: "/dashboard", label: "Visão geral", icon: BarChart3, permission: AUTH_PERMISSIONS.DASHBOARD_READ, enabled: true },
+  { href: "/clientes", label: "Clientes", icon: Users, permission: AUTH_PERMISSIONS.CUSTOMERS_READ, enabled: true },
+  { href: "/produtos", label: "Produtos", icon: Package, permission: AUTH_PERMISSIONS.PRODUCTS_READ, enabled: true },
+  { href: "/vendas/nova", label: "Vendas", icon: ReceiptText, permission: [AUTH_PERMISSIONS.SALES_WRITE, AUTH_PERMISSIONS.SALES_PDV], enabled: true },
+  { href: "/vendas/offline" as Route, label: "Vendas offline", icon: WifiOff, permission: [AUTH_PERMISSIONS.SALES_WRITE, AUTH_PERMISSIONS.SALES_PDV], enabled: true },
+  { href: "/caixa" as Route, label: "Caixa", icon: Banknote, permission: AUTH_PERMISSIONS.CASH_READ, enabled: true },
+  { href: "/banho-e-tosa" as Route, label: "Banho e Tosa", icon: CalendarDays, permission: AUTH_PERMISSIONS.GROOMING_READ, enabled: true },
+  { href: "/estoque", label: "Estoque", icon: Boxes, permission: AUTH_PERMISSIONS.INVENTORY_READ, enabled: true },
+  { href: "/financeiro", label: "Financeiro", icon: WalletCards, permission: AUTH_PERMISSIONS.FINANCE_READ, enabled: true },
+  { href: "/relatorios", label: "Relatórios", icon: ClipboardList, permission: AUTH_PERMISSIONS.REPORTS_READ, enabled: true },
+  { href: "/fiscal", label: "Fiscal", icon: Landmark, permission: AUTH_PERMISSIONS.FISCAL_READ, enabled: true, requiresUpgrade: true },
+  { href: "/configuracoes/usuarios", label: "Configurações", icon: Settings, permission: AUTH_PERMISSIONS.IDENTITY_USERS_READ, enabled: true }
+];
+
+export function ErpShell({ user, branches, children }: ErpShellProps) {
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const { update } = useSession();
+  const [switchingBranch, setSwitchingBranch] = useState(false);
+  const [branchSwitchError, setBranchSwitchError] = useState<string | null>(null);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [upgradeTooltip, setUpgradeTooltip] = useState<{ x: number; y: number } | null>(null);
+  const availableNavItems = navItems.filter((item) => Array.isArray(item.permission) ? item.permission.some((permission) => hasPermission(user.permissions, permission)) : hasPermission(user.permissions, item.permission));
+  const isSaleWindow = pathname === "/vendas/nova" && searchParams.get("janela") === "1";
+
+  function openSaleWindow(event: MouseEvent<HTMLAnchorElement>) {
+    if (event.currentTarget.href.includes("/vendas/nova") && window.matchMedia("(min-width: 768px)").matches) {
+      event.preventDefault();
+      const width = Math.max(720, Math.min(1440, window.screen.availWidth - 40));
+      const height = Math.max(640, Math.min(940, window.screen.availHeight - 40));
+      const saleWindow = window.open("/vendas/nova?janela=1", "nova-venda", `popup=yes,width=${width},height=${height},left=20,top=20,resizable=yes,scrollbars=yes`);
+      if (saleWindow) saleWindow.focus();
+      else window.location.assign("/vendas/nova");
+    }
+    setMobileMenuOpen(false);
+  }
+
+  async function switchBranch(branchId: string) {
+    setSwitchingBranch(true);
+    setBranchSwitchError(null);
+    try {
+      const updatedSession = await update({ currentBranchId: branchId === "ALL" ? null : branchId });
+      if (!updatedSession) throw new Error("SESSION_UPDATE_FAILED");
+      window.location.assign(pathname);
+    } catch {
+      setSwitchingBranch(false);
+      setBranchSwitchError("Não foi possível alterar a loja. Atualize a página e tente novamente.");
+    }
+  }
+
+  function showUpgradeTooltip(event: MouseEvent<HTMLElement>) {
+    const tooltipWidth = 260;
+    const tooltipHeight = 48;
+    setUpgradeTooltip({
+      x: Math.max(8, Math.min(event.clientX + 14, window.innerWidth - tooltipWidth - 8)),
+      y: Math.max(8, Math.min(event.clientY + 14, window.innerHeight - tooltipHeight - 8))
+    });
+  }
+
+  if (isSaleWindow) {
+    return <main className="min-h-screen bg-muted px-3 py-4 text-ink sm:px-6 lg:px-8 lg:py-6"><div className="mx-auto max-w-[1600px]">{children}</div></main>;
+  }
+
+  return (
+    <div className="erp-shell min-h-screen bg-muted text-ink lg:grid lg:grid-cols-[260px_1fr]">
+      <aside className="erp-sidebar border-b border-border bg-white lg:min-h-screen lg:border-b-0 lg:border-r">
+        <div className="erp-sidebar__brand flex items-center justify-between gap-3 border-b border-border px-4 py-4 lg:block">
+          <div className="flex items-center gap-3">
+            <div className="rounded-full bg-white p-0.5 shadow-sm ring-1 ring-border">
+              <BrandLogo className="h-10 w-10" />
+            </div>
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold">Teste</p>
+              <p className="truncate text-xs text-subdued">{user.currentTenantName}</p>
+            </div>
+          </div>
+          <Button
+            className="lg:hidden"
+            variant="ghost"
+            aria-label={mobileMenuOpen ? "Fechar menu" : "Abrir menu"}
+            onClick={() => setMobileMenuOpen((open) => !open)}
+          >
+            {mobileMenuOpen ? <X size={20} /> : <Menu size={20} />}
+          </Button>
+        </div>
+
+        <div className="erp-sidebar__branch border-b border-border px-4 py-3">
+          {user.canAccessAllBranches && branches.length > 1 ? (
+            <Select
+              label={switchingBranch ? "Alterando loja..." : "Loja em uso"}
+              help="As telas e os relatórios mostram somente a loja selecionada. Escolha todas as lojas para consultar os totais gerais."
+              value={user.currentBranchId ?? "ALL"}
+              disabled={switchingBranch}
+              onChange={(event) => void switchBranch(event.target.value)}
+            >
+              <option value="ALL">Todas as lojas</option>
+              {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}{branch.isMain ? " (principal)" : ""}</option>)}
+            </Select>
+          ) : (
+            <div className="rounded-md bg-muted px-3 py-2">
+              <p className="text-xs text-subdued">Loja em uso</p>
+              <p className="truncate text-sm font-semibold">{user.currentBranchName ?? branches[0]?.name ?? "Loja não definida"}</p>
+            </div>
+          )}
+          {branchSwitchError ? <p className="mt-2 text-xs font-medium text-danger">{branchSwitchError}</p> : null}
+        </div>
+
+        <nav className={cn("erp-nav px-3 py-3 lg:block lg:space-y-1", mobileMenuOpen ? "grid grid-cols-2 gap-2" : "hidden")}>
+          {availableNavItems.map((item) => {
+            const Icon = item.icon;
+            const active = item.enabled && pathname === item.href;
+            const content = (
+              <>
+                <Icon size={18} />
+                <span>{item.label}</span>
+              </>
+            );
+
+            if (item.href === "/vendas/offline") {
+              return <a key={item.href} href={item.href} onClick={() => setMobileMenuOpen(false)} className={cn("erp-nav__item inline-flex min-h-11 items-center gap-2 rounded-md px-3 text-sm font-medium transition lg:flex", active ? "bg-brand-50 text-brand-700" : "text-subdued hover:bg-muted hover:text-ink")}>{content}</a>;
+            }
+
+            if (item.requiresUpgrade) {
+              return (
+                <span
+                  key={item.href}
+                  aria-disabled="true"
+                  onMouseEnter={showUpgradeTooltip}
+                  onMouseMove={showUpgradeTooltip}
+                  onMouseLeave={() => setUpgradeTooltip(null)}
+                  className="erp-nav__item inline-flex min-h-11 cursor-not-allowed items-center gap-2 rounded-md px-3 text-sm font-medium text-subdued opacity-60 lg:flex"
+                >
+                  {content}
+                </span>
+              );
+            }
+
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                onClick={item.href === "/vendas/nova" ? openSaleWindow : () => setMobileMenuOpen(false)}
+                className={cn(
+                  "erp-nav__item inline-flex min-h-11 items-center gap-2 rounded-md px-3 text-sm font-medium transition lg:flex",
+                  active ? "bg-brand-50 text-brand-700" : "text-subdued hover:bg-muted hover:text-ink"
+                )}
+              >
+                {content}
+              </Link>
+            );
+          })}
+          <Button variant="secondary" className="col-span-2 mt-1 justify-start lg:hidden" onClick={() => signOut({ callbackUrl: "/login" })}>
+            <LogOut size={18} />Sair
+          </Button>
+        </nav>
+
+        {upgradeTooltip ? (
+          <div
+            role="tooltip"
+            className="pointer-events-none fixed z-50 max-w-[260px] rounded-md border border-border bg-white/95 px-3 py-2 text-xs font-medium text-ink shadow-md backdrop-blur-sm"
+            style={{ left: upgradeTooltip.x, top: upgradeTooltip.y }}
+          >
+            Faça upgrade do plano para testar o módulo Fiscal.
+          </div>
+        ) : null}
+
+        <div className="erp-sidebar__footer hidden border-t border-border p-4 lg:block">
+          <div className="mb-3 flex items-center gap-2 text-sm">
+            <ShieldCheck className="text-success" size={18} />
+            <div className="min-w-0">
+              <p className="truncate font-semibold">{user.name}</p>
+              <p className="truncate text-xs text-subdued">{user.roleName}</p>
+            </div>
+          </div>
+          <Button variant="secondary" className="w-full justify-start" onClick={() => signOut({ callbackUrl: "/login" })}>
+            <LogOut size={18} />
+            Sair
+          </Button>
+        </div>
+      </aside>
+
+      <main className="erp-main min-w-0 overflow-x-hidden px-3 py-4 sm:px-6 lg:px-8 lg:py-6">
+        <div className="erp-content">{children}</div>
+      </main>
+    </div>
+  );
+}
