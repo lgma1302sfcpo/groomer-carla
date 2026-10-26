@@ -1,5 +1,5 @@
-const CACHE_NAME = "teste-v1";
-const APP_SHELL = ["/", "/login", "/manifest.json", "/logo.svg"];
+const CACHE_NAME = "groomer-carla-v3";
+const APP_SHELL = ["/", "/login", "/manifest.json", "/logo.webp", "/favicon.ico", "/icons/icon-192.png", "/icons/icon-512.png", "/icons/icon-maskable-512.png", "/icons/apple-touch-icon.png"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)));

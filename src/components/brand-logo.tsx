@@ -10,12 +10,12 @@ type BrandLogoProps = {
 export function BrandLogo({ className, priority = false }: BrandLogoProps) {
   return (
     <Image
-      src="/logo.svg"
-      alt="Logo da Teste"
-      width={100}
-      height={100}
+      src="/logo.webp"
+      alt="Logo da Groomer Carla"
+      width={640}
+      height={640}
+      sizes="96px"
       priority={priority}
-      unoptimized
       className={cn("rounded-full object-cover", className)}
     />
   );

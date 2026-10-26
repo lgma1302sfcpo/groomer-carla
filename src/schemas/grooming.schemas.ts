@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { parseBrazilianNumber } from "@/lib/utils";
+import { DEFAULT_GROOMING_COMMISSION_PERCENT } from "@/lib/grooming-commission";
 
 const numeric = z.preprocess(parseBrazilianNumber, z.number());
 const optionalText = z.string().trim().max(500).optional().transform((value) => value || undefined);
@@ -9,7 +10,7 @@ export const groomingDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Infor
 
 export const groomingProfessionalSchema = z.object({
   name: z.string().trim().min(2, "Informe o nome do profissional.").max(100),
-  commissionPercent: numeric.pipe(z.number().min(0).max(100)).default(0).transform(() => 0)
+  commissionPercent: numeric.pipe(z.number().min(0, "A comissão não pode ser negativa.").max(100, "A comissão não pode ultrapassar 100%.").multipleOf(0.01, "Use no máximo duas casas decimais na comissão.")).default(DEFAULT_GROOMING_COMMISSION_PERCENT)
 });
 
 export const groomingServiceSchema = z.object({

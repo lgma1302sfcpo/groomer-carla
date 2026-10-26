@@ -4,6 +4,7 @@ import type { Prisma } from "@prisma/client";
 import { created, errorResponse, ok } from "@/lib/api-response";
 import { requireSelectedBranch } from "@/lib/branch-context";
 import { AppError } from "@/lib/errors";
+import { calculateGroomingCommission } from "@/lib/grooming-commission";
 import { calculateAppointmentEnd, GROOMING_SIMULTANEOUS_CAPACITY, hasScheduleCapacity } from "@/lib/grooming-schedule";
 import { AUTH_PERMISSIONS } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
@@ -140,7 +141,7 @@ export async function POST(request: NextRequest) {
       throw new AppError("Este profissional já possui dois pets nesse período. Escolha outro horário.", "GROOMING_TIME_CAPACITY_FULL", 409);
     }
 
-    const commissionAmount = 0;
+    const commissionAmount = calculateGroomingCommission(input.price, number(professional.commissionPercent));
     const appointment = await prisma.groomingAppointment.create({
       data: {
         tenantId,

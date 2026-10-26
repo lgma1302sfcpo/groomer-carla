@@ -7,13 +7,13 @@ import type { GroomingAgendaDTO, GroomingAppointmentDTO } from "@/dtos/grooming.
 
 vi.stubGlobal("React", React);
 
-const mocks = vi.hoisted(() => ({ update: vi.fn(), create: vi.fn(), useAgenda: vi.fn(), pending: false }));
+const mocks = vi.hoisted(() => ({ update: vi.fn(), create: vi.fn(), saveProfessional: vi.fn(), useAgenda: vi.fn(), pending: false }));
 vi.mock("@/hooks/use-grooming", () => ({
   useGroomingAgenda: mocks.useAgenda,
   useGroomingCalendar: () => ({ data: { appointments: [], blocks: [] } }),
   useCreateGroomingAppointment: () => ({ mutateAsync: mocks.create, isPending: false }),
   useUpdateGroomingAppointment: () => ({ mutateAsync: mocks.update, isPending: mocks.pending }),
-  useSaveGroomingProfessional: () => ({}),
+  useSaveGroomingProfessional: () => ({ mutateAsync: mocks.saveProfessional, isPending: false }),
   useSaveGroomingService: () => ({}),
   useCreateGroomingBlock: () => ({}),
   useDeleteGroomingBlock: () => ({})
@@ -121,5 +121,83 @@ describe("correção do horário na agenda", () => {
     mocks.useAgenda.mockReturnValue({ data: { ...agendaWith({ ...appointment, status: "CANCELLED" }), reminders: [] }, isPending: false, isError: false });
     render(<GroomingSchedulePage canManage canManageCustomers={false}/>);
     expect(screen.queryByRole("button", { name: "Editar horário" })).not.toBeInTheDocument();
+  });
+});
+
+describe("comissões na agenda", () => {
+  const commissioned = { ...appointment, commissionAmount: 31.5, professional: { ...appointment.professional, commissionPercent: 35 } };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.pending = false;
+    mocks.saveProfessional.mockResolvedValue({ updated: true });
+    mocks.useAgenda.mockReturnValue({ data: agendaWith(commissioned), isPending: false, isError: false });
+  });
+
+  it("mostra a comissão registrada mesmo quando o percentual atual mudou", () => {
+    mocks.useAgenda.mockReturnValue({ data: agendaWith({ ...commissioned, professional: { ...commissioned.professional, commissionPercent: 50 } }), isPending: false, isError: false });
+    render(<GroomingSchedulePage canManage canManageCustomers={false}/>);
+    expect(screen.getByText("Comissões previstas").parentElement).toHaveTextContent("31,50");
+    expect(screen.getByText(/Comissão prevista do dia:/)).toHaveTextContent("31,50");
+    expect(screen.getByText(/^Comissão R\$/)).toHaveTextContent("31,50");
+  });
+
+  it("exclui cancelados e faltas dos totais mantendo o histórico visível", () => {
+    mocks.useAgenda.mockReturnValue({ data: { ...agendaWith(commissioned), appointments: [
+      commissioned,
+      { ...commissioned, id: "cancelled", status: "CANCELLED" },
+      { ...commissioned, id: "no-show", status: "NO_SHOW" }
+    ] }, isPending: false, isError: false });
+    render(<GroomingSchedulePage canManage canManageCustomers={false}/>);
+    expect(screen.getByText("Comissões previstas").parentElement).toHaveTextContent("31,50");
+    expect(screen.getByText("Valor previsto").parentElement).toHaveTextContent("90,00");
+    expect(screen.getAllByText("Comissão não contabilizada")).toHaveLength(2);
+  });
+
+  it("carrega e salva o percentual brasileiro ao editar o profissional", async () => {
+    render(<GroomingSchedulePage canManage canManageCustomers={false}/>);
+    fireEvent.click(screen.getByRole("button", { name: "Serviços e profissionais" }));
+    const dialog = screen.getByRole("dialog", { name: "Serviços e profissionais" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Juliana 35%" }));
+    expect(within(dialog).getByLabelText("Comissão (%)")).toHaveValue("35");
+    fireEvent.change(within(dialog).getByLabelText("Comissão (%)"), { target: { value: "33,33" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Salvar profissional" }));
+    await waitFor(() => expect(mocks.saveProfessional).toHaveBeenCalledWith({ id: "professional-1", name: "Juliana", commissionPercent: 33.33 }));
+    await waitFor(() => expect(within(dialog).getByLabelText("Comissão (%)")).toHaveValue("30"));
+  });
+
+  it("preenche 30% por padrão para novos profissionais", async () => {
+    render(<GroomingSchedulePage canManage canManageCustomers={false}/>);
+    fireEvent.click(screen.getByRole("button", { name: "Serviços e profissionais" }));
+    const dialog = screen.getByRole("dialog", { name: "Serviços e profissionais" });
+    expect(within(dialog).getByLabelText("Comissão (%)")).toHaveValue("30");
+    fireEvent.change(within(dialog).getByLabelText("Nome"), { target: { value: "Carla" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Adicionar profissional" }));
+    await waitFor(() => expect(mocks.saveProfessional).toHaveBeenCalledWith({ id: undefined, name: "Carla", commissionPercent: 30 }));
+  });
+
+  it("apresenta o erro de percentual antes de enviar", () => {
+    render(<GroomingSchedulePage canManage canManageCustomers={false}/>);
+    fireEvent.click(screen.getByRole("button", { name: "Serviços e profissionais" }));
+    const dialog = screen.getByRole("dialog", { name: "Serviços e profissionais" });
+    fireEvent.change(within(dialog).getByLabelText("Nome"), { target: { value: "Carla" } });
+    fireEvent.change(within(dialog).getByLabelText("Comissão (%)"), { target: { value: "101" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Adicionar profissional" }));
+    expect(within(dialog).getByText("A comissão não pode ultrapassar 100%.")).toBeInTheDocument();
+    expect(mocks.saveProfessional).not.toHaveBeenCalled();
+  });
+
+  it("atualiza a prévia da comissão ao mudar valor ou profissional", () => {
+    const data = agendaWith(commissioned);
+    data.professionals.push({ id: "professional-2", name: "Carla", commissionPercent: 50 });
+    mocks.useAgenda.mockReturnValue({ data, isPending: false, isError: false });
+    render(<GroomingSchedulePage canManage canManageCustomers={false}/>);
+    fireEvent.click(screen.getByRole("button", { name: "Novo agendamento" }));
+    const dialog = screen.getByRole("dialog", { name: "Novo agendamento" });
+    expect(within(dialog).getByText(/Comissão de Juliana/)).toHaveTextContent("31,50");
+    fireEvent.change(within(dialog).getByLabelText("Valor"), { target: { value: "R$ 100,00" } });
+    expect(within(dialog).getByText(/Comissão de Juliana/)).toHaveTextContent("35,00");
+    fireEvent.change(within(dialog).getByLabelText("Profissional"), { target: { value: "professional-2" } });
+    expect(within(dialog).getByText(/Comissão de Carla/)).toHaveTextContent("50,00");
   });
 });

@@ -14,8 +14,10 @@ import type { CustomerListItemDTO } from "@/dtos/commerce/customer.dto";
 import type { GroomingAppointmentDTO, GroomingScheduleBlockDTO } from "@/dtos/grooming.dto";
 import { useCreateGroomingAppointment, useCreateGroomingBlock, useDeleteGroomingBlock, useGroomingAgenda, useGroomingCalendar, useSaveGroomingProfessional, useSaveGroomingService, useUpdateGroomingAppointment } from "@/hooks/use-grooming";
 import { GROOMING_SIMULTANEOUS_CAPACITY, nextAvailableStart } from "@/lib/grooming-schedule";
+import { calculateGroomingCommission, countsTowardGroomingTotals, DEFAULT_GROOMING_COMMISSION_PERCENT } from "@/lib/grooming-commission";
 import { buildGroomingWhatsAppReminder } from "@/lib/grooming-reminder";
 import { parseBrazilianNumber } from "@/lib/utils";
+import { groomingProfessionalSchema } from "@/schemas/grooming.schemas";
 
 const statusLabels: Record<GroomingAppointmentDTO["status"], string> = {
   SCHEDULED: "Agendado", CONFIRMED: "Confirmado", IN_SERVICE: "Em atendimento", COMPLETED: "Concluído", CANCELLED: "Cancelado", NO_SHOW: "Não compareceu"
@@ -112,7 +114,7 @@ export function GroomingSchedulePage({ canManage, canManageCustomers }: { canMan
   const [editingAppointment, setEditingAppointment] = useState<GroomingAppointmentDTO | null>(null);
   const [timeForm, setTimeForm] = useState({ date: "", time: "" });
   const [timeError, setTimeError] = useState<string | null>(null);
-  const [professionalForm, setProfessionalForm] = useState({ id: "", name: "" });
+  const [professionalForm, setProfessionalForm] = useState({ id: "", name: "", commissionPercent: String(DEFAULT_GROOMING_COMMISSION_PERCENT) });
   const [serviceForm, setServiceForm] = useState({ id: "", name: "", durationMinutes: "60", defaultPrice: "" });
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const [blockForm, setBlockForm] = useState({ professionalId: "", startTime: "12:00", endTime: "13:00", reason: "Almoço" });
@@ -127,8 +129,12 @@ export function GroomingSchedulePage({ canManage, canManageCustomers }: { canMan
   const reminders = data?.reminders ?? [];
   const selectedCustomer = customers.find((item) => item.id === form.customerId);
   const selectedService = services.find((item) => item.id === form.serviceId);
+  const selectedProfessional = professionals.find((item) => item.id === form.professionalId);
+  const previewCommission = calculateGroomingCommission(Number(parseBrazilianNumber(form.price) ?? 0), selectedProfessional?.commissionPercent ?? 0);
   const previewEnd = selectedService && form.time ? timeLabel(new Date(new Date(isoAt(date, form.time)).getTime() + selectedService.durationMinutes * 60_000)) : "--:--";
-  const dayRevenue = appointments.filter((item) => item.status !== "CANCELLED").reduce((sum, item) => sum + item.price, 0);
+  const activeAppointments = appointments.filter((item) => countsTowardGroomingTotals(item.status));
+  const dayRevenue = activeAppointments.reduce((sum, item) => sum + item.price, 0);
+  const dayCommission = activeAppointments.reduce((sum, item) => sum + item.commissionAmount, 0);
   const appointmentsByProfessional = new Map(professionals.map((professional) => [professional.id, appointments.filter((item) => item.professional.id === professional.id)]));
   const editingDuration = editingAppointment ? (new Date(editingAppointment.endAt).getTime() - new Date(editingAppointment.startAt).getTime()) / 60_000 : 0;
   const editedEnd = editingAppointment && timeForm.date && timeForm.time
@@ -227,10 +233,16 @@ export function GroomingSchedulePage({ canManage, canManageCustomers }: { canMan
   }
 
   async function submitProfessional() {
+    if (saveProfessional.isPending) return;
     setSettingsError(null);
+    const result = groomingProfessionalSchema.safeParse({ name: professionalForm.name, commissionPercent: professionalForm.commissionPercent || DEFAULT_GROOMING_COMMISSION_PERCENT });
+    if (!result.success) {
+      setSettingsError(result.error.issues[0].message);
+      return;
+    }
     try {
-      await saveProfessional.mutateAsync({ id: professionalForm.id || undefined, name: professionalForm.name, commissionPercent: 0 });
-      setProfessionalForm({ id: "", name: "" });
+      await saveProfessional.mutateAsync({ id: professionalForm.id || undefined, ...result.data });
+      setProfessionalForm({ id: "", name: "", commissionPercent: String(DEFAULT_GROOMING_COMMISSION_PERCENT) });
     } catch (error) { setSettingsError(error instanceof Error ? error.message : "Não foi possível salvar o profissional."); }
   }
 
@@ -257,7 +269,7 @@ export function GroomingSchedulePage({ canManage, canManageCustomers }: { canMan
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-2"><Button variant="secondary" className="px-2" aria-label="Dia anterior" onClick={() => setDate(shiftDate(date, -1))}><ChevronLeft size={19}/></Button><Input type="date" value={date} onChange={(event) => setDate(event.target.value)}/><Button variant="secondary" className="px-2" aria-label="Próximo dia" onClick={() => setDate(shiftDate(date, 1))}><ChevronRight size={19}/></Button></div>
           <div><p className="font-semibold">{dateLabel(date)}</p><button className="text-xs font-medium text-brand-700 hover:underline" onClick={() => setDate(localDate())}>Voltar para hoje</button></div>
-          <div className="flex gap-5 text-sm"><div><p className="text-xs text-subdued">Agendamentos</p><strong>{appointments.filter((item) => item.status !== "CANCELLED").length}</strong></div><div><p className="text-xs text-subdued">Valor previsto</p><strong>{money(dayRevenue)}</strong></div></div>
+          <div className="flex flex-wrap gap-5 text-sm"><div><p className="text-xs text-subdued">Agendamentos</p><strong>{activeAppointments.length}</strong></div><div><p className="text-xs text-subdued">Valor previsto</p><strong>{money(dayRevenue)}</strong></div><div><p className="text-xs text-subdued">Comissões previstas</p><strong>{money(dayCommission)}</strong></div></div>
         </div>
       </Card>
 
@@ -309,11 +321,13 @@ export function GroomingSchedulePage({ canManage, canManageCustomers }: { canMan
       {professionals.length ? <div className="grid items-start gap-4 xl:grid-cols-2">
         {professionals.map((professional) => {
           const professionalAppointments = appointmentsByProfessional.get(professional.id) ?? [];
+          const professionalActiveAppointments = professionalAppointments.filter((item) => countsTowardGroomingTotals(item.status));
+          const commission = professionalActiveAppointments.reduce((sum, item) => sum + item.commissionAmount, 0);
           return <Card key={professional.id} className="overflow-hidden">
-            <div className="flex items-center justify-between border-b border-border bg-brand-50 px-4 py-3"><div className="flex items-center gap-2"><UserRound size={19} className="text-brand-700"/><h2 className="font-semibold">{professional.name}</h2></div><Badge>{professionalAppointments.filter((item) => item.status !== "CANCELLED").length} horários</Badge></div>
+            <div className="flex items-center justify-between border-b border-border bg-brand-50 px-4 py-3"><div className="flex items-center gap-2"><UserRound size={19} className="text-brand-700"/><div><h2 className="font-semibold">{professional.name}</h2><p className="text-xs text-subdued">Comissão prevista do dia: {money(commission)}</p></div></div><Badge>{professionalActiveAppointments.length} horários</Badge></div>
             <div className="space-y-3 p-3">
               {professionalAppointments.map((appointment) => <div key={appointment.id} className={`rounded-lg border p-3 ${statusClasses[appointment.status]}`}>
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between"><div className="flex items-start gap-3"><div className="rounded-md bg-white/80 px-2 py-1 text-center shadow-sm"><strong className="block text-base">{timeLabel(appointment.startAt)}</strong><span className="text-[11px]">até {timeLabel(appointment.endAt)}</span></div><div><strong className="block">{appointment.pet.name}</strong><span className="text-xs">Tutor: {appointment.customer.name}</span><p className="mt-1 text-sm font-medium">{appointment.service.name} · {durationLabel(appointment.service.durationMinutes)}</p></div></div><div className="text-left sm:text-right"><Badge>{statusLabels[appointment.status]}</Badge><strong className="mt-1 block">{money(appointment.price)}</strong></div></div>
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between"><div className="flex items-start gap-3"><div className="rounded-md bg-white/80 px-2 py-1 text-center shadow-sm"><strong className="block text-base">{timeLabel(appointment.startAt)}</strong><span className="text-[11px]">até {timeLabel(appointment.endAt)}</span></div><div><strong className="block">{appointment.pet.name}</strong><span className="text-xs">Tutor: {appointment.customer.name}</span><p className="mt-1 text-sm font-medium">{appointment.service.name} · {durationLabel(appointment.service.durationMinutes)}</p></div></div><div className="text-left sm:text-right"><Badge>{statusLabels[appointment.status]}</Badge><strong className="mt-1 block">{money(appointment.price)}</strong><span className="text-xs">{countsTowardGroomingTotals(appointment.status) ? `Comissão ${money(appointment.commissionAmount)}` : "Comissão não contabilizada"}</span></div></div>
                 <div className="mt-2 flex flex-wrap gap-1.5 text-xs">{appointment.isPackage ? <Badge>Pacote</Badge> : null}{appointment.notes ? <span className="rounded bg-white/70 px-2 py-1">Obs.: {appointment.notes}</span> : null}</div>
                 {canManage && appointment.status !== "CANCELLED" ? <div className="mt-3 flex flex-wrap gap-2 border-t border-current/10 pt-2">
                   <Button className="h-8 px-2 text-xs" variant="secondary" onClick={() => openTimeEdit(appointment)}><Pencil size={14}/> Editar horário</Button>
@@ -356,9 +370,10 @@ export function GroomingSchedulePage({ canManage, canManageCustomers }: { canMan
           <Select label="Profissional" value={form.professionalId} onChange={(event) => chooseProfessional(event.target.value)}><option value="">Selecione</option>{professionals.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</Select>
           <Select label="Serviço" value={form.serviceId} onChange={(event) => chooseService(event.target.value)}><option value="">Selecione</option>{services.map((item) => <option key={item.id} value={item.id}>{item.name} · {durationLabel(item.durationMinutes)}</option>)}</Select>
           <Input label="Horário inicial" type="time" value={form.time} onChange={(event) => setForm((current) => ({ ...current, time: event.target.value }))}/>
-          <Input label="Valor" mask="currency" value={form.price} onChange={(event) => setForm((current) => ({ ...current, price: event.target.value }))}/>
+          <Input id="grooming-appointment-price" label="Valor" mask="currency" value={form.price} onChange={(event) => setForm((current) => ({ ...current, price: event.target.value }))}/>
         </div>
         <div className="mt-4 rounded-lg border border-brand-200 bg-brand-50 p-4"><div className="flex items-center gap-2 text-brand-800"><CalendarDays size={18}/><strong>{form.time || "--:--"} até {previewEnd}</strong></div><p className="mt-1 text-xs text-brand-700">{selectedService ? `${selectedService.name}: ${durationLabel(selectedService.durationMinutes)}. São permitidos até 2 pets simultâneos para o mesmo profissional.` : "Selecione o serviço para calcular o término."}</p></div>
+        {selectedProfessional ? <p className="mt-3 text-sm text-subdued">Comissão de {selectedProfessional.name} ({selectedProfessional.commissionPercent.toLocaleString("pt-BR")}%): <strong>{money(previewCommission)}</strong></p> : null}
         <label className="mt-4 flex items-center gap-2 rounded-md border border-border p-3 text-sm"><input type="checkbox" checked={form.isPackage} onChange={(event) => setForm((current) => ({ ...current, isPackage: event.target.checked }))}/> Atendimento faz parte de um pacote</label>
         <div className="mt-4"><Input label="Observação" value={form.notes} onChange={(event) => setForm((current) => ({ ...current, notes: event.target.value }))}/></div>
         {formError ? <p className="mt-4 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-danger">{formError}</p> : null}
@@ -380,9 +395,9 @@ export function GroomingSchedulePage({ canManage, canManageCustomers }: { canMan
         <CustomerCreateForm onCancel={() => setCustomerOpen(false)} onSuccess={(customer) => void customerCreated(customer)}/>
       </Modal>
 
-      <Modal open={settingsOpen} title="Serviços e profissionais" description="Defina os profissionais, a duração e o preço dos serviços usados na agenda." onClose={() => setSettingsOpen(false)} className="max-w-4xl">
+      <Modal open={settingsOpen} title="Serviços e profissionais" description="Defina duração, preço e comissão usados automaticamente na agenda." onClose={() => setSettingsOpen(false)} className="max-w-4xl">
         <div className="grid gap-6 lg:grid-cols-2">
-          <div><h3 className="font-semibold">Profissionais</h3><div className="mt-3"><Input label="Nome" value={professionalForm.name} onChange={(event) => setProfessionalForm((current) => ({ ...current, name: event.target.value }))}/></div><Button className="mt-3 w-full" onClick={() => void submitProfessional()} disabled={!professionalForm.name.trim() || saveProfessional.isPending}>{professionalForm.id ? "Salvar profissional" : "Adicionar profissional"}</Button><div className="mt-4 space-y-2">{professionals.map((item) => <button key={item.id} className="w-full rounded-md border border-border p-3 text-left text-sm hover:bg-muted" onClick={() => setProfessionalForm({ id: item.id, name: item.name })}><strong>{item.name}</strong></button>)}</div></div>
+          <div><h3 className="font-semibold">Profissionais</h3><div className="mt-3 grid gap-3 sm:grid-cols-[1fr_130px]"><Input id="grooming-professional-name" label="Nome" value={professionalForm.name} disabled={saveProfessional.isPending} onChange={(event) => setProfessionalForm((current) => ({ ...current, name: event.target.value }))}/><Input id="grooming-professional-commission" label="Comissão (%)" mask="decimal" placeholder="30" value={professionalForm.commissionPercent} disabled={saveProfessional.isPending} onChange={(event) => setProfessionalForm((current) => ({ ...current, commissionPercent: event.target.value }))}/></div><p className="mt-2 text-xs text-subdued">Padrão: 30% sobre o valor do serviço. De 0 a 100%, com até duas casas decimais. Alterações valem para novos agendamentos; os valores já registrados são mantidos.</p><Button className="mt-3 w-full" onClick={() => void submitProfessional()} disabled={!professionalForm.name.trim() || saveProfessional.isPending}>{professionalForm.id ? "Salvar profissional" : "Adicionar profissional"}</Button><div className="mt-4 space-y-2">{professionals.map((item) => <button key={item.id} disabled={saveProfessional.isPending} className="flex w-full items-center justify-between rounded-md border border-border p-3 text-left text-sm hover:bg-muted" onClick={() => { setSettingsError(null); setProfessionalForm({ id: item.id, name: item.name, commissionPercent: String(item.commissionPercent).replace(".", ",") }); }}><strong>{item.name}</strong><span>{item.commissionPercent.toLocaleString("pt-BR")}%</span></button>)}</div></div>
           <div><h3 className="font-semibold">Serviços</h3><div className="mt-3 space-y-3"><Input label="Nome do serviço" value={serviceForm.name} onChange={(event) => setServiceForm((current) => ({ ...current, name: event.target.value }))}/><div className="grid grid-cols-2 gap-3"><Input label="Duração (min)" mask="integer" value={serviceForm.durationMinutes} onChange={(event) => setServiceForm((current) => ({ ...current, durationMinutes: event.target.value }))}/><Input label="Preço padrão" mask="currency" value={serviceForm.defaultPrice} onChange={(event) => setServiceForm((current) => ({ ...current, defaultPrice: event.target.value }))}/></div></div><Button className="mt-3 w-full" onClick={() => void submitService()} disabled={!serviceForm.name.trim() || saveService.isPending}>{serviceForm.id ? "Salvar serviço" : "Adicionar serviço"}</Button><div className="mt-4 space-y-2">{services.map((item) => <button key={item.id} className="flex w-full items-center justify-between rounded-md border border-border p-3 text-left text-sm hover:bg-muted" onClick={() => setServiceForm({ id: item.id, name: item.name, durationMinutes: String(item.durationMinutes), defaultPrice: String(item.defaultPrice) })}><span><strong className="block">{item.name}</strong><span className="text-xs text-subdued">{money(item.defaultPrice)}</span></span><span>{durationLabel(item.durationMinutes)}</span></button>)}</div></div>
         </div>
         {settingsError ? <p className="mt-4 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-danger">{settingsError}</p> : null}

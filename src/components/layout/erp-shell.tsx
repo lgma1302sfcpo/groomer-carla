@@ -126,10 +126,10 @@ export function ErpShell({ user, branches, children }: ErpShellProps) {
         <div className="erp-sidebar__brand flex items-center justify-between gap-3 border-b border-border px-4 py-4 lg:block">
           <div className="flex items-center gap-3">
             <div className="rounded-full bg-white p-0.5 shadow-sm ring-1 ring-border">
-              <BrandLogo className="h-10 w-10" />
+              <BrandLogo className="h-12 w-12" />
             </div>
             <div className="min-w-0">
-              <p className="truncate text-sm font-semibold">Teste</p>
+              <p className="truncate text-sm font-semibold">Groomer Carla</p>
               <p className="truncate text-xs text-subdued">{user.currentTenantName}</p>
             </div>
           </div>

@@ -16,7 +16,7 @@ vi.mock("next/navigation", () => ({
 }));
 
 vi.mock("@/components/brand-logo", () => ({
-  BrandLogo: () => <span aria-label="Teste" />
+  BrandLogo: () => <span aria-label="Groomer Carla" />
 }));
 
 describe("menu do ERP", () => {
@@ -25,7 +25,7 @@ describe("menu do ERP", () => {
       <ErpShell
         user={{
           name: "Administrador",
-          currentTenantName: "Teste",
+          currentTenantName: "Groomer Carla",
           currentBranchId: "branch-1",
           currentBranchName: "Loja principal",
           canAccessAllBranches: false,

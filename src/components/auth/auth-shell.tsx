@@ -1,4 +1,4 @@
-import { Boxes, Heart, PawPrint, ShieldCheck, ShoppingBag, Sparkles } from "lucide-react";
+import { Boxes, Heart, ShieldCheck, ShoppingBag, Sparkles } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { BrandLogo } from "@/components/brand-logo";
@@ -19,10 +19,10 @@ export function AuthShell({ title, subtitle, children }: AuthShellProps) {
 
         <div className="relative z-10 flex items-center gap-4">
           <div className="rounded-full bg-white p-1.5 shadow-2xl shadow-blue-950/30">
-            <BrandLogo className="h-16 w-16" priority />
+            <BrandLogo className="h-24 w-24" priority />
           </div>
           <div>
-            <p className="text-xl font-extrabold tracking-tight">Teste</p>
+            <p className="text-xl font-extrabold tracking-tight">Groomer Carla</p>
             <p className="text-sm font-medium text-blue-100">Gestão do pet shop</p>
           </div>
         </div>
@@ -64,18 +64,18 @@ export function AuthShell({ title, subtitle, children }: AuthShellProps) {
         <div className="relative w-full max-w-[460px]">
           <div className="mb-8 flex items-center justify-center gap-3 lg:hidden">
             <div className="rounded-full bg-white p-1 shadow-lg">
-              <BrandLogo className="h-14 w-14" priority />
+              <BrandLogo className="h-20 w-20" priority />
             </div>
             <div>
-              <p className="font-extrabold tracking-tight text-brand-700">Teste</p>
+              <p className="font-extrabold tracking-tight text-brand-700">Groomer Carla</p>
               <p className="text-xs font-medium text-subdued">Gestão do pet shop</p>
             </div>
           </div>
 
           <div className="rounded-[28px] border border-white bg-white/95 p-6 shadow-[0_24px_80px_rgba(25,52,112,0.12)] backdrop-blur sm:p-9">
             <div className="mb-7">
-              <div className="mb-5 hidden h-11 w-11 items-center justify-center rounded-2xl bg-brand-50 text-brand-700 lg:flex">
-                <PawPrint size={23} />
+              <div className="mb-5 hidden lg:block">
+                <BrandLogo className="h-16 w-16" />
               </div>
               <p className="mb-2 text-xs font-bold uppercase tracking-[0.16em] text-brand-600">Área da equipe</p>
               <h1 className="text-3xl font-extrabold tracking-tight text-ink">{title}</h1>
@@ -85,7 +85,7 @@ export function AuthShell({ title, subtitle, children }: AuthShellProps) {
           </div>
 
           <p className="mt-6 text-center text-xs text-slate-400">
-            © {new Date().getFullYear()} Teste
+            © {new Date().getFullYear()} Groomer Carla
           </p>
         </div>
       </section>

@@ -450,7 +450,7 @@ model GroomingProfessional {
   tenantId          String
   branchId          String
   name              String
-  commissionPercent Decimal  @default(0) @db.Decimal(5, 2)
+  commissionPercent Decimal  @default(30) @db.Decimal(5, 2)
   active            Boolean  @default(true)
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
