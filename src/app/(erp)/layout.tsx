@@ -15,6 +15,17 @@ export default async function ErpLayout({ children }: { children: ReactNode }) {
 
   session.user.permissions = await getEffectivePermissions(session.user.id, session.user.currentTenantId);
 
+  // Display names can change while the user still has an older JWT session.
+  const membership = await prisma.userTenantRole.findFirst({
+    where: { userId: session.user.id, tenantId: session.user.currentTenantId, isActive: true },
+    select: { user: { select: { name: true } }, tenant: { select: { name: true } } }
+  });
+
+  if (!membership) redirect("/login");
+
+  session.user.name = membership.user.name;
+  session.user.currentTenantName = membership.tenant.name;
+
   const branches = await prisma.branch.findMany({
     where: {
       tenantId: session.user.currentTenantId,
