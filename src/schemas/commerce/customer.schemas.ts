@@ -32,6 +32,7 @@ const queryBoolean = z.preprocess((value) => {
 }, z.boolean());
 
 export const customerPetSchema = z.object({
+  id: z.string().optional(),
   name: z.string().trim().min(2, "Informe o nome do pet."),
   species: z.enum(["DOG", "CAT"], { message: "Selecione se o pet é cão ou gato." }),
   sex: z.enum(["MALE", "FEMALE"], { message: "Selecione o sexo do pet." }),

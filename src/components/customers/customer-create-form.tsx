@@ -54,6 +54,7 @@ function customerDefaults(customer?: CustomerListItemDTO | null): UpdateCustomer
     notes: customer.notes ?? "",
     tags: customer.tags,
     pets: customer.pets?.length ? customer.pets.map((pet) => ({
+      id: pet.id,
       name: pet.name,
       species: pet.species,
       sex: pet.sex,
@@ -70,7 +71,8 @@ export function CustomerCreateForm({ customer, onCancel, onSuccess }: CustomerFo
   const updateCustomer = useUpdateCustomer();
   const [error, setError] = useState<string | null>(null);
   const form = useForm<UpdateCustomerDTO>({ resolver: zodResolver(updateCustomerSchema), defaultValues: customerDefaults(customer) });
-  const pets = useFieldArray({ control: form.control, name: "pets" });
+  // keyName próprio: o "id" dos pets é o id real do cadastro e precisa ir para a API.
+  const pets = useFieldArray({ control: form.control, name: "pets", keyName: "key" });
 
   useEffect(() => {
     form.reset(customerDefaults(customer));
@@ -124,7 +126,7 @@ export function CustomerCreateForm({ customer, onCancel, onSuccess }: CustomerFo
           </div>
           <div className="space-y-3">
             {pets.fields.map((field, index) => (
-              <div key={field.id} className="rounded-lg border border-border bg-muted/40 p-4">
+              <div key={field.key} className="rounded-lg border border-border bg-muted/40 p-4">
                 <div className="mb-3 flex items-center justify-between gap-2">
                   <h4 className="font-medium text-ink">Pet {index + 1}</h4>
                   {pets.fields.length > 1 ? <Button type="button" variant="ghost" className="text-danger" onClick={() => pets.remove(index)}><Trash2 size={16} />Remover</Button> : null}

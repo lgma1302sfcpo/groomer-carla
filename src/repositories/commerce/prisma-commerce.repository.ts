@@ -115,19 +115,24 @@ export class PrismaCommerceRepository implements CommerceRepository {
 
       if (updated.count === 0) return null;
 
-      await tx.pet.deleteMany({ where: { customerId } });
-      if (data.pets.length) {
-        await tx.pet.createMany({
-          data: data.pets.map((pet) => ({
-            customerId,
-            name: pet.name,
-            species: pet.species,
-            sex: pet.sex,
-            breed: pet.breed,
-            birthDate: pet.birthDate,
-            notes: pet.notes
-          }))
-        });
+      // Atualiza os pets pelo id para preservar os agendamentos ligados a eles.
+      const existing = await tx.pet.findMany({
+        where: { customerId },
+        select: { id: true, name: true, _count: { select: { groomingAppointments: true } } }
+      });
+      const existingIds = new Set(existing.map((pet) => pet.id));
+      const keptIds = new Set(data.pets.map((pet) => pet.id).filter((id): id is string => Boolean(id && existingIds.has(id))));
+      const removed = existing.filter((pet) => !keptIds.has(pet.id));
+      const blocked = removed.find((pet) => pet._count.groomingAppointments > 0);
+      if (blocked) {
+        throw new AppError(`O pet ${blocked.name} tem atendimentos de banho e tosa e não pode ser removido.`, "PET_HAS_GROOMING_HISTORY", 409);
+      }
+      if (removed.length) await tx.pet.deleteMany({ where: { id: { in: removed.map((pet) => pet.id) }, customerId } });
+
+      for (const pet of data.pets) {
+        const values = { name: pet.name, species: pet.species, sex: pet.sex, breed: pet.breed ?? null, birthDate: pet.birthDate ?? null, notes: pet.notes ?? null };
+        if (pet.id && keptIds.has(pet.id)) await tx.pet.update({ where: { id: pet.id }, data: values });
+        else await tx.pet.create({ data: { customerId, ...values } });
       }
 
       return tx.customer.findFirst({ where: { id: customerId, tenantId, branchId }, include: { pets: true, branch: { select: { name: true } } } });
